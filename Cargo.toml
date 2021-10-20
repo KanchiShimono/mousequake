@@ -1,0 +1,11 @@
+[package]
+name = "mousequake"
+version = "0.0.1"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+structopt = "0.3.25"
+enigo = "0.0.14"
+signal-hook = "0.3.10"
