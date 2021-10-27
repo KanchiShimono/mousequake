@@ -50,7 +50,7 @@ jobs:
       - name: Pre Build | Install dependencies [Linux]
         if: matrix.os == 'ubuntu-latest'
         run: |
-          apt install libxdo-dev
+          sudo apt install libxdo-dev
 
       - name: Build
         uses: actions-rs/cargo@v1
