@@ -50,6 +50,7 @@ fn main() -> Result<(), Error> {
     let mut quaker = Quaker::new(enigo);
     let mut delta = Coordinate::new(width, 0);
     let term = Arc::new(AtomicBool::new(false));
+    let sig_check_interval: f32 = 0.5;
 
     for sig in TERM_SIGNALS {
         flag::register(*sig, Arc::clone(&term))?;
@@ -57,7 +58,12 @@ fn main() -> Result<(), Error> {
 
     while !term.load(Ordering::Relaxed) {
         delta = quaker.quake(delta);
-        thread::sleep(Duration::from_secs_f32(interval));
+
+        let mut elapsed: f32 = 0.;
+        while !term.load(Ordering::Relaxed) && elapsed < interval {
+            thread::sleep(Duration::from_secs_f32(sig_check_interval));
+            elapsed += sig_check_interval;
+        }
     }
 
     Ok(())
