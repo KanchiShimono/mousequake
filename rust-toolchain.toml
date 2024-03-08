@@ -1,0 +1,5 @@
+[toolchain]
+channel = "stable"
+components = ["rustc", "cargo", "rustfmt", "clippy"]
+profile = "minimal"
+targets = []
