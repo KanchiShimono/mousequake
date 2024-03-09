@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 structopt = "0.3.25"
-enigo = "0.0.14"
+enigo = "0.2.0-rc2"
 signal-hook = "0.3.10"
