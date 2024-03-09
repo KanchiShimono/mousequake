@@ -1,6 +1,8 @@
 name: Deploy
 on:
   push:
+    branches:
+      - "*"
     tags:
       - "v*.*.*"
 
@@ -42,27 +44,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          target: ${{ matrix.target }}
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
 
       - name: Pre Build | Install dependencies [Linux]
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt install libxdo-dev
 
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --locked --target ${{ matrix.target }}
+      - name: Build | Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build | Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Post Build | Prepare artifacts [Windows]
         if: matrix.os == 'windows-latest'
@@ -80,8 +74,9 @@ jobs:
           tar czvf ../../../${{ matrix.name }} mousequake
           cd -
 
-      - name: Deploy
-        uses: actions/upload-artifact@v3
+      - name: Release | Upload artifacts
+        if: ${{ github.ref_type == 'tag' }}
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: ${{ matrix.name }}
