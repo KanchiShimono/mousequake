@@ -1,6 +1,8 @@
 name: Deploy
 on:
   push:
+    branches:
+      - "*"
     tags:
       - "v*.*.*"
 
@@ -70,6 +72,7 @@ jobs:
           cd -
 
       - name: Release | Upload artifacts
+        if: ${{ github.ref_type == 'tag' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
