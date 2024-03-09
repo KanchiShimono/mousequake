@@ -1,7 +1,8 @@
-use enigo::{Enigo, MouseControllable};
+use enigo::{Coordinate::Rel, Enigo, Mouse};
+use enigo::{InputError, Settings};
 use signal_hook::consts::TERM_SIGNALS;
 use signal_hook::flag;
-use std::io::Error;
+use std::error::Error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -37,16 +38,16 @@ impl Quaker {
         Quaker { enigo }
     }
 
-    fn quake(&mut self, delta: Coordinate) -> Coordinate {
+    fn quake(&mut self, delta: Coordinate) -> Result<Coordinate, InputError> {
         let next = Coordinate::new(-delta.x, delta.y);
-        self.enigo.mouse_move_relative(delta.x, delta.y);
-        next
+        self.enigo.move_mouse(delta.x, delta.y, Rel)?;
+        Ok(next)
     }
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let Opt { width, interval } = Opt::from_args();
-    let enigo = Enigo::new();
+    let enigo = Enigo::new(&Settings::default())?;
     let mut quaker = Quaker::new(enigo);
     let mut delta = Coordinate::new(width, 0);
     let term = Arc::new(AtomicBool::new(false));
@@ -57,7 +58,7 @@ fn main() -> Result<(), Error> {
     }
 
     while !term.load(Ordering::Relaxed) {
-        delta = quaker.quake(delta);
+        delta = quaker.quake(delta)?;
 
         let mut elapsed: f32 = 0.;
         while !term.load(Ordering::Relaxed) && elapsed < interval {
