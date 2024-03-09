@@ -52,6 +52,9 @@ jobs:
         run: |
           sudo apt install libxdo-dev
 
+      - name: Build | Add target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Build | Build
         run: cargo build --release --locked --target ${{ matrix.target }}
 
