@@ -1,5 +1,5 @@
-use enigo::{Coordinate::Rel, Enigo, Mouse};
-use enigo::{InputError, Settings};
+use enigo::Coordinate::Rel;
+use enigo::{Enigo, InputError, Mouse, Settings};
 use signal_hook::consts::TERM_SIGNALS;
 use signal_hook::flag;
 use std::error::Error;
