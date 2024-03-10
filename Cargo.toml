@@ -1,11 +1,13 @@
 [package]
 name = "mousequake"
+description = "Simple tool for auto shaking mouse pointer"
+authors = ["Kanchi <dev.kanchi.shimono@gmail.com"]
 version = "0.0.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-structopt = "0.3.25"
+clap = { version = "4", features = ["derive"] }
 enigo = { version = "0.2.0-rc2", features = ["x11rb"] }
 signal-hook = "0.3.10"

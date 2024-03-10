@@ -1,3 +1,4 @@
+use clap::Parser;
 use enigo::Coordinate::Rel;
 use enigo::{Enigo, InputError, Mouse, Settings};
 use signal_hook::consts::TERM_SIGNALS;
@@ -7,14 +8,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt)]
-struct Opt {
-    #[structopt(short, long, default_value = "1")]
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long, default_value_t = 1)]
     width: i32,
 
-    #[structopt(short, long, default_value = "10")]
+    #[arg(short, long, default_value_t = 10.0)]
     interval: f32,
 }
 
@@ -46,7 +47,7 @@ impl Quaker {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let Opt { width, interval } = Opt::from_args();
+    let Cli { width, interval } = Cli::parse();
     let enigo = Enigo::new(&Settings::default())?;
     let mut quaker = Quaker::new(enigo);
     let mut delta = Coordinate::new(width, 0);
