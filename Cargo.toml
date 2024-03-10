@@ -10,4 +10,4 @@ edition = "2021"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 enigo = { version = "0.2.0-rc2", features = ["x11rb"] }
-signal-hook = "0.3.10"
+signal-hook = "0.3.17"
