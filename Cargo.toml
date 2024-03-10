@@ -1,5 +1,7 @@
 [package]
 name = "mousequake"
+description = "Simple tool for auto shaking mouse pointer"
+authors = ["Kanchi <dev.kanchi.shimono@gmail.com"]
 version = "0.0.2"
 edition = "2021"
 
