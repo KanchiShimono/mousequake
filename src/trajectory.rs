@@ -227,11 +227,10 @@ mod tests {
         }
 
         // Second cycle should match the first (periodic behavior)
-        for i in 0..36 {
+        for first_point in first_points.iter().take(36) {
             let point = trajectory.next();
             assert!(
-                (point.x - first_points[i].0).abs() < 0.01
-                    && (point.y - first_points[i].1).abs() < 0.01,
+                (point.x - first_point.0).abs() < 0.01 && (point.y - first_point.1).abs() < 0.01,
                 "Circle trajectory should be periodic"
             );
         }
@@ -276,11 +275,10 @@ mod tests {
         );
 
         // Second cycle should match the first (periodic behavior)
-        for i in 0..10 {
+        for first_point in first_cycle.iter().take(10) {
             let point = trajectory.next();
             assert!(
-                (point.x - first_cycle[i].0).abs() < 0.01
-                    && (point.y - first_cycle[i].1).abs() < 0.01,
+                (point.x - first_point.0).abs() < 0.01 && (point.y - first_point.1).abs() < 0.01,
                 "Star trajectory should be periodic"
             );
         }
@@ -353,11 +351,10 @@ mod tests {
         );
 
         // Second cycle should match the first (periodic behavior)
-        for i in 0..36 {
+        for first_point in first_cycle.iter().take(36) {
             let point = trajectory.next();
             assert!(
-                (point.x - first_cycle[i].0).abs() < 0.01
-                    && (point.y - first_cycle[i].1).abs() < 0.01,
+                (point.x - first_point.0).abs() < 0.01 && (point.y - first_point.1).abs() < 0.01,
                 "Infinity trajectory should be periodic"
             );
         }
