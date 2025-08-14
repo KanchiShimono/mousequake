@@ -1,14 +1,31 @@
-use clap::{Args, Command, CommandFactory, Parser, Subcommand};
-use clap_complete::Shell;
-use enigo::Coordinate::Rel;
-use enigo::{Enigo, InputError, Mouse, Settings};
-use signal_hook::consts::TERM_SIGNALS;
-use signal_hook::flag;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
+
+use clap::{Args, Command, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
+use enigo::Coordinate::Rel;
+use enigo::{Enigo, InputError, Mouse, Settings};
+use signal_hook::consts::TERM_SIGNALS;
+use signal_hook::flag;
+
+mod trajectory;
+use trajectory::{
+    CircleTrajectory, InfinityTrajectory, LinearTrajectory, SquareTrajectory, StarTrajectory,
+    Trajectory,
+};
+
+#[derive(Debug, Clone, ValueEnum)]
+enum TrajectoryType {
+    Linear,
+    Circle,
+    Star,
+    Square,
+    #[value(alias = "figure8")]
+    Infinity,
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -18,22 +35,25 @@ use std::time::Duration;
     long_about = r#"Simple tool for automatically shaking the mouse pointer
 
 By default (without subcommands), mousequake will start shaking your mouse pointer immediately.
-Use -w/--width to control the shake distance and -i/--interval to control the frequency.
+Use -s/--size to control the pattern size and -i/--interval to control the frequency.
 
 Press Ctrl+C to stop."#,
     after_help = r#"EXAMPLES:
-    mousequake                  # Start shaking with default settings (1px every 10s)
-    mousequake -w 5 -i 30       # Shake 5 pixels every 30 seconds
-    mousequake completion bash  # Generate bash completion script"#
+    mousequake                      # Start shaking with default linear pattern (1px every 10s)
+    mousequake -s 5 -i 30           # Pattern size of 5 pixels every 30 seconds
+    mousequake -t circle -s 10      # Move in a circle with 10px diameter
+    mousequake -t star -s 20 -i 5   # Draw a star pattern, 20px size, every 5 seconds
+    mousequake -t infinity -s 15    # Move in figure-8/infinity pattern, 15px size
+    mousequake completion bash      # Generate bash completion script"#
 )]
 struct Cli {
     #[arg(
         short,
         long,
         default_value_t = 1,
-        help = "Distance to move the mouse (pixels)"
+        help = "Maximum width of the trajectory pattern (pixels)"
     )]
-    width: i32,
+    size: i32,
 
     #[arg(
         short,
@@ -42,6 +62,15 @@ struct Cli {
         help = "Time between mouse movements (seconds)"
     )]
     interval: f32,
+
+    #[arg(
+        short,
+        long,
+        value_enum,
+        default_value_t = TrajectoryType::Linear,
+        help = "Trajectory pattern to use"
+    )]
+    trajectory: TrajectoryType,
 
     #[command(subcommand)]
     command: Option<SubCommand>,
@@ -71,37 +100,41 @@ impl CompletionCommand {
     }
 }
 
-struct Coordinate {
-    x: i32,
-    y: i32,
-}
-
-impl Coordinate {
-    fn new(x: i32, y: i32) -> Self {
-        Coordinate { x, y }
-    }
-}
-
 struct Quaker {
     enigo: Enigo,
+    trajectory: Box<dyn Trajectory>,
 }
 
 impl Quaker {
-    fn new(enigo: Enigo) -> Self {
-        Quaker { enigo }
+    fn new(enigo: Enigo, trajectory: Box<dyn Trajectory>) -> Self {
+        Quaker { enigo, trajectory }
     }
 
-    fn quake(&mut self, delta: Coordinate) -> Result<Coordinate, InputError> {
-        let next = Coordinate::new(-delta.x, delta.y);
-        self.enigo.move_mouse(delta.x, delta.y, Rel)?;
-        Ok(next)
+    fn quake(&mut self) -> Result<(), InputError> {
+        let point = self.trajectory.next();
+        self.enigo.move_mouse(point.x as i32, point.y as i32, Rel)?;
+        Ok(())
     }
 }
 
-fn execute_quaker(width: i32, interval: f32) -> Result<(), Box<dyn Error>> {
+fn create_trajectory(trajectory_type: TrajectoryType, size: f32) -> Box<dyn Trajectory> {
+    match trajectory_type {
+        TrajectoryType::Linear => Box::new(LinearTrajectory::new(size)),
+        TrajectoryType::Circle => Box::new(CircleTrajectory::new(size)),
+        TrajectoryType::Star => Box::new(StarTrajectory::new(size)),
+        TrajectoryType::Square => Box::new(SquareTrajectory::new(size)),
+        TrajectoryType::Infinity => Box::new(InfinityTrajectory::new(size)),
+    }
+}
+
+fn execute_quaker(
+    size: i32,
+    interval: f32,
+    trajectory_type: TrajectoryType,
+) -> Result<(), Box<dyn Error>> {
     let enigo = Enigo::new(&Settings::default())?;
-    let mut quaker = Quaker::new(enigo);
-    let mut delta = Coordinate::new(width, 0);
+    let trajectory = create_trajectory(trajectory_type, size as f32);
+    let mut quaker = Quaker::new(enigo, trajectory);
     let term = Arc::new(AtomicBool::new(false));
     let sig_check_interval: f32 = 0.5;
 
@@ -110,7 +143,7 @@ fn execute_quaker(width: i32, interval: f32) -> Result<(), Box<dyn Error>> {
     }
 
     while !term.load(Ordering::Relaxed) {
-        delta = quaker.quake(delta)?;
+        quaker.quake()?;
 
         let mut elapsed: f32 = 0.;
         while !term.load(Ordering::Relaxed) && elapsed < interval {
@@ -124,8 +157,9 @@ fn execute_quaker(width: i32, interval: f32) -> Result<(), Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let Cli {
-        width,
+        size,
         interval,
+        trajectory,
         command,
     } = Cli::parse();
 
@@ -138,47 +172,48 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
     }
 
-    execute_quaker(width, interval)
+    execute_quaker(size, interval, trajectory)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::Parser;
 
-    #[test]
-    fn test_coordinate() {
-        // Test with positive values
-        let coord_positive = Coordinate::new(10, 20);
-        assert_eq!(coord_positive.x, 10);
-        assert_eq!(coord_positive.y, 20);
-
-        // Test with negative values
-        let coord_negative = Coordinate::new(-5, -10);
-        assert_eq!(coord_negative.x, -5);
-        assert_eq!(coord_negative.y, -10);
-    }
+    use super::*;
 
     #[test]
     fn test_cli_default_values() {
         let cli = Cli::parse_from(["mousequake"]);
-        assert_eq!(cli.width, 1);
+        assert_eq!(cli.size, 1);
         assert_eq!(cli.interval, 10.0);
+        assert!(matches!(cli.trajectory, TrajectoryType::Linear));
         assert!(cli.command.is_none());
     }
 
     #[test]
-    fn test_cli_custom_width() {
-        let cli = Cli::parse_from(["mousequake", "-w", "5"]);
-        assert_eq!(cli.width, 5);
+    fn test_cli_custom_size() {
+        let cli = Cli::parse_from(["mousequake", "-s", "5"]);
+        assert_eq!(cli.size, 5);
         assert_eq!(cli.interval, 10.0);
     }
 
     #[test]
     fn test_cli_custom_interval() {
         let cli = Cli::parse_from(["mousequake", "-i", "30.5"]);
-        assert_eq!(cli.width, 1);
+        assert_eq!(cli.size, 1);
         assert_eq!(cli.interval, 30.5);
+    }
+
+    #[test]
+    fn test_cli_trajectory_types() {
+        let cli = Cli::parse_from(["mousequake", "-t", "circle"]);
+        assert!(matches!(cli.trajectory, TrajectoryType::Circle));
+
+        let cli = Cli::parse_from(["mousequake", "-t", "star"]);
+        assert!(matches!(cli.trajectory, TrajectoryType::Star));
+
+        let cli = Cli::parse_from(["mousequake", "-t", "figure8"]);
+        assert!(matches!(cli.trajectory, TrajectoryType::Infinity));
     }
 
     #[test]
