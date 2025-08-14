@@ -5,7 +5,7 @@
 [![Release](https://github.com/KanchiShimono/mousequake/actions/workflows/release.yml/badge.svg)](https://github.com/KanchiShimono/mousequake/actions/workflows/release.yml)
 [![Homebrew](https://img.shields.io/badge/Homebrew-kanchishimono/tap-yellow)](https://github.com/KanchiShimono/homebrew-tap)
 
-Simple tool for automatically shaking the mouse pointer.
+Simple tool for automatically shaking the mouse pointer with various trajectory patterns.
 This tool saves your time from forced machine sleeping during automated work.
 
 ## Quick Start
@@ -27,22 +27,29 @@ mousequake [OPTIONS] [COMMAND]
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--width` | `-w` | 1 | Distance to move the mouse (pixels) |
+| `--size` | `-s` | 1 | Maximum width of the trajectory pattern (pixels) |
 | `--interval` | `-i` | 10 | Time between movements (seconds) |
+| `--trajectory` | `-t` | linear | Trajectory pattern (linear, circle, star, square, infinity) |
 | `--help` | `-h` | | Show help information |
 | `--version` | `-V` | | Show version |
 
 ### Examples
 
 ```sh
-# Default: move 1 pixel every 10 seconds
+# Default: linear pattern with 1 pixel size every 10 seconds
 mousequake
 
-# Move 5 pixels every 30 seconds
-mousequake -w 5 -i 30
+# Pattern size of 5 pixels every 30 seconds
+mousequake -s 5 -i 30
 
-# Move 2 pixels every 5 seconds
-mousequake --width 2 --interval 5
+# Circle pattern with 10px diameter
+mousequake -t circle -s 10
+
+# Star pattern with 20px size every 5 seconds
+mousequake -t star -s 20 -i 5
+
+# Infinity/figure-8 pattern
+mousequake -t infinity -s 15
 ```
 
 ## Shell Completion

@@ -2,7 +2,7 @@
 name = "mousequake"
 version = "0.0.4"
 edition = "2024"
-authors = ["Kanchi <dev.kanchi.shimono@gmail.com"]
+authors = ["Kanchi <dev.kanchi.shimono@gmail.com>"]
 description = "Simple tool for automatically shaking the mouse pointer"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
