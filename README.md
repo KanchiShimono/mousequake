@@ -1,7 +1,9 @@
 # mousequake
 
+[![Rust: 2024](https://img.shields.io/badge/Rust-2024%20Edition-orange?logo=rust)](https://doc.rust-lang.org/edition-guide/)
 [![Test](https://github.com/KanchiShimono/mousequake/actions/workflows/test.yml/badge.svg)](https://github.com/KanchiShimono/mousequake/actions/workflows/test.yml)
 [![Release](https://github.com/KanchiShimono/mousequake/actions/workflows/release.yml/badge.svg)](https://github.com/KanchiShimono/mousequake/actions/workflows/release.yml)
+[![Homebrew](https://img.shields.io/badge/Homebrew-kanchishimono/tap-yellow)](https://github.com/KanchiShimono/homebrew-tap)
 
 Simple tool for automatically shaking the mouse pointer.
 This tool saves your time from forced machine sleeping during automated work.
