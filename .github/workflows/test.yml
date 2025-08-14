@@ -7,6 +7,10 @@ on:
       - "v*.*.*"
   pull_request:
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 jobs:
   rustfmt:
     name: Rustfmt
@@ -22,7 +26,10 @@ jobs:
     name: Clippy
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - name: Setup | Checkout
@@ -32,13 +39,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build | Lint
-        run: cargo clippy --workspace --locked --all-targets --all-features -- -D clippy::all
+        run: cargo clippy --workspace --locked --all-targets --all-features -- -D warnings -D clippy::all
 
   check:
     name: Check (compile)
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - name: Setup | Checkout
@@ -48,4 +58,23 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build | Check
-        run: cargo check --workspace --locked
+        run: cargo check --workspace --locked --all-targets --all-features
+
+  test:
+    name: Test
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup | Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --workspace --locked --all-features --no-fail-fast --verbose
