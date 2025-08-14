@@ -4,8 +4,8 @@ use enigo::{Enigo, InputError, Mouse, Settings};
 use signal_hook::consts::TERM_SIGNALS;
 use signal_hook::flag;
 use std::error::Error;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
