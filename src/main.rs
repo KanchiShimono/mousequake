@@ -140,3 +140,50 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     execute_quaker(width, interval)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_coordinate() {
+        // Test with positive values
+        let coord_positive = Coordinate::new(10, 20);
+        assert_eq!(coord_positive.x, 10);
+        assert_eq!(coord_positive.y, 20);
+
+        // Test with negative values
+        let coord_negative = Coordinate::new(-5, -10);
+        assert_eq!(coord_negative.x, -5);
+        assert_eq!(coord_negative.y, -10);
+    }
+
+    #[test]
+    fn test_cli_default_values() {
+        let cli = Cli::parse_from(["mousequake"]);
+        assert_eq!(cli.width, 1);
+        assert_eq!(cli.interval, 10.0);
+        assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn test_cli_custom_width() {
+        let cli = Cli::parse_from(["mousequake", "-w", "5"]);
+        assert_eq!(cli.width, 5);
+        assert_eq!(cli.interval, 10.0);
+    }
+
+    #[test]
+    fn test_cli_custom_interval() {
+        let cli = Cli::parse_from(["mousequake", "-i", "30.5"]);
+        assert_eq!(cli.width, 1);
+        assert_eq!(cli.interval, 30.5);
+    }
+
+    #[test]
+    fn test_cli_completion_subcommand() {
+        let cli = Cli::parse_from(["mousequake", "completion", "bash"]);
+        assert!(matches!(cli.command, Some(SubCommand::Completion(_))));
+    }
+}
