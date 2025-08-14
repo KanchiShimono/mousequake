@@ -278,7 +278,7 @@ dependencies = [
 
 [[package]]
 name = "mousequake"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "clap",
  "clap_complete",
