@@ -181,3 +181,185 @@ impl Trajectory for InfinityTrajectory {
         Point::new(dx, dy)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_linear_trajectory() {
+        let mut trajectory = LinearTrajectory::new(10.0);
+
+        let p1 = trajectory.next();
+        assert_eq!(p1.x, 5.0);
+        assert_eq!(p1.y, 0.0);
+
+        let p2 = trajectory.next();
+        assert_eq!(p2.x, -5.0);
+        assert_eq!(p2.y, 0.0);
+
+        let p3 = trajectory.next();
+        assert_eq!(p3.x, 5.0);
+        assert_eq!(p3.y, 0.0);
+    }
+
+    #[test]
+    fn test_circle_trajectory() {
+        let mut trajectory = CircleTrajectory::new(10.0);
+        let mut distances = Vec::new();
+        let mut first_points = Vec::new();
+
+        // Collect first cycle of movements
+        for _ in 0..36 {
+            let point = trajectory.next();
+            let distance = (point.x * point.x + point.y * point.y).sqrt();
+            distances.push(distance);
+            first_points.push((point.x, point.y));
+        }
+
+        // All movement distances should be similar (within 10% tolerance)
+        let avg_distance = distances.iter().sum::<f32>() / distances.len() as f32;
+        for distance in &distances {
+            assert!(
+                (distance - avg_distance).abs() / avg_distance < 0.1,
+                "Movement distances should be uniform in a circle"
+            );
+        }
+
+        // Second cycle should match the first (periodic behavior)
+        for i in 0..36 {
+            let point = trajectory.next();
+            assert!(
+                (point.x - first_points[i].0).abs() < 0.01
+                    && (point.y - first_points[i].1).abs() < 0.01,
+                "Circle trajectory should be periodic"
+            );
+        }
+    }
+
+    #[test]
+    fn test_star_trajectory() {
+        let mut trajectory = StarTrajectory::new(20.0);
+        let mut first_cycle = Vec::new();
+        let mut position_x = 0.0;
+        let mut position_y = 0.0;
+        let mut radial_distances = Vec::new();
+
+        // Collect one complete star cycle
+        for _ in 0..10 {
+            let point = trajectory.next();
+            position_x += point.x;
+            position_y += point.y;
+            let radial_distance = (position_x * position_x + position_y * position_y).sqrt();
+            radial_distances.push(radial_distance);
+            first_cycle.push((point.x, point.y));
+        }
+
+        // Should return to origin after one complete star
+        assert!(
+            position_x.abs() < 0.1 && position_y.abs() < 0.1,
+            "Star should form a closed path"
+        );
+
+        // Star should visit both outer and inner radii
+        let max_radius = radial_distances
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let min_radius = radial_distances
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        assert!(
+            *max_radius > *min_radius * 2.0,
+            "Star should have distinct outer and inner vertices"
+        );
+
+        // Second cycle should match the first (periodic behavior)
+        for i in 0..10 {
+            let point = trajectory.next();
+            assert!(
+                (point.x - first_cycle[i].0).abs() < 0.01
+                    && (point.y - first_cycle[i].1).abs() < 0.01,
+                "Star trajectory should be periodic"
+            );
+        }
+    }
+
+    #[test]
+    fn test_square_trajectory() {
+        let mut trajectory = SquareTrajectory::new(10.0);
+
+        let p1 = trajectory.next();
+        assert_eq!(p1.x, -10.0);
+        assert_eq!(p1.y, 0.0);
+
+        let p2 = trajectory.next();
+        assert_eq!(p2.x, 0.0);
+        assert_eq!(p2.y, -10.0);
+
+        let p3 = trajectory.next();
+        assert_eq!(p3.x, 10.0);
+        assert_eq!(p3.y, 0.0);
+
+        let p4 = trajectory.next();
+        assert_eq!(p4.x, 0.0);
+        assert_eq!(p4.y, 10.0);
+
+        let p5 = trajectory.next();
+        assert_eq!(p5.x, -10.0);
+        assert_eq!(p5.y, 0.0);
+    }
+
+    #[test]
+    fn test_infinity_trajectory() {
+        let mut trajectory = InfinityTrajectory::new(10.0);
+        let mut x_positions = Vec::new();
+        let mut first_cycle = Vec::new();
+        let mut current_x = 0.0;
+
+        // Track x positions through one cycle
+        for _ in 0..36 {
+            let point = trajectory.next();
+            current_x += point.x;
+            x_positions.push(current_x);
+            first_cycle.push((point.x, point.y));
+        }
+
+        // X position should oscillate (go positive, then negative, then back)
+        let max_x = x_positions
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let min_x = x_positions
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        assert!(
+            *max_x > 2.0 && *min_x < -2.0,
+            "Infinity pattern should oscillate in x direction"
+        );
+
+        // Should cross near center at least twice in a cycle
+        let mut center_crossings = 0;
+        for &x in &x_positions {
+            if x.abs() < 0.5 {
+                center_crossings += 1;
+            }
+        }
+        assert!(
+            center_crossings >= 2,
+            "Infinity pattern should cross center multiple times"
+        );
+
+        // Second cycle should match the first (periodic behavior)
+        for i in 0..36 {
+            let point = trajectory.next();
+            assert!(
+                (point.x - first_cycle[i].0).abs() < 0.01
+                    && (point.y - first_cycle[i].1).abs() < 0.01,
+                "Infinity trajectory should be periodic"
+            );
+        }
+    }
+}
