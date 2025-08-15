@@ -60,14 +60,17 @@ Generate completion scripts for your shell:
 # Bash
 mousequake completion bash > ~/.local/share/bash-completion/completions/mousequake
 
-# Zsh
-mousequake completion zsh > ~/.zfunc/_mousequake
+# Zsh (choose one of the following paths)
+mousequake completion zsh > ~/.zsh/completions/_mousequake
 
 # Fish
 mousequake completion fish > ~/.config/fish/completions/mousequake.fish
 
 # PowerShell
-mousequake completion powershell > _mousequake.ps1
+# Unix/Linux/macOS:
+mousequake completion powershell > ~/.config/powershell/Completions/mousequake.ps1
+# Windows:
+mousequake completion powershell > "$HOME\Documents\PowerShell\Completions\mousequake.ps1"
 ```
 
 ## Installation
