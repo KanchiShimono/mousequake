@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use clap::{Args, Command, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{Args, Command, CommandFactory, Parser, ValueEnum};
 use clap_complete::Shell;
 use enigo::Coordinate::Rel;
 use enigo::{Enigo, InputError, Mouse, Settings};
@@ -73,11 +73,11 @@ struct Cli {
     trajectory: TrajectoryType,
 
     #[command(subcommand)]
-    command: Option<SubCommand>,
+    command: Option<Subcommand>,
 }
 
-#[derive(Debug, Subcommand)]
-enum SubCommand {
+#[derive(Debug, clap::Subcommand)]
+enum Subcommand {
     #[command(about = "Generate shell completion scripts")]
     Completion(CompletionCommand),
 }
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if let Some(command) = command {
         return match command {
-            SubCommand::Completion(cmd) => {
+            Subcommand::Completion(cmd) => {
                 let mut command = Cli::command();
                 cmd.execute(&mut command)
             }
@@ -219,6 +219,6 @@ mod tests {
     #[test]
     fn test_cli_completion_subcommand() {
         let cli = Cli::parse_from(["mousequake", "completion", "bash"]);
-        assert!(matches!(cli.command, Some(SubCommand::Completion(_))));
+        assert!(matches!(cli.command, Some(Subcommand::Completion(_))));
     }
 }
