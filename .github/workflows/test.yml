@@ -39,7 +39,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build | Lint
-        run: cargo clippy --workspace --locked --all-targets --all-features -- -D warnings -D clippy::all
+        run: cargo clippy --config 'build.warnings="deny"' --workspace --locked --all-targets --all-features
 
   check:
     name: Check (compile)
@@ -77,4 +77,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test --workspace --locked --all-features --no-fail-fast --verbose
+        run: cargo test --workspace --locked --all-features --all-targets --no-fail-fast --verbose
