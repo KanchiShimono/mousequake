@@ -11,4 +11,4 @@ description = "Simple tool for automatically shaking the mouse pointer"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 enigo = "0.6.1"
-signal-hook = "0.3.18"
+signal-hook = "0.4.4"
