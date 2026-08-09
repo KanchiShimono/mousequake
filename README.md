@@ -27,7 +27,7 @@ mousequake [OPTIONS] [COMMAND]
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
-| `--size` | `-s` | 1 | Maximum width of the trajectory pattern (pixels) |
+| `--size` | `-s` | 1 | Maximum width of the trajectory pattern (positive integer pixels; star and infinity require `size >= 2`) |
 | `--interval` | `-i` | 10 | Time from one successful movement to the next (0.02 to 31536000 seconds) |
 | `--trajectory` | `-t` | linear | Trajectory pattern (linear, circle, star, square, infinity) |
 | `--help` | `-h` | | Show help information |
