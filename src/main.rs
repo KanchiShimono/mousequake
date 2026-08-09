@@ -1,9 +1,9 @@
-use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use anyhow::{self, Context};
 use clap::{Args, Command, CommandFactory, Parser, ValueEnum};
 use clap_complete::Shell;
 use enigo::Coordinate::Rel;
@@ -89,7 +89,7 @@ struct CompletionCommand {
 }
 
 impl CompletionCommand {
-    fn execute(&self, cmd: &mut Command) -> Result<(), Box<dyn Error>> {
+    fn execute(&self, cmd: &mut Command) -> anyhow::Result<()> {
         clap_complete::generate(
             self.shell,
             cmd,
@@ -131,19 +131,21 @@ fn execute_quaker(
     size: i32,
     interval: f32,
     trajectory_type: TrajectoryType,
-) -> Result<(), Box<dyn Error>> {
-    let enigo = Enigo::new(&Settings::default())?;
+) -> anyhow::Result<()> {
+    let enigo =
+        Enigo::new(&Settings::default()).context("failed to initialize mouse input backend")?;
     let trajectory = create_trajectory(trajectory_type, size as f32);
     let mut quaker = Quaker::new(enigo, trajectory);
     let term = Arc::new(AtomicBool::new(false));
     let sig_check_interval: f32 = 0.5;
 
     for sig in TERM_SIGNALS {
-        flag::register(*sig, Arc::clone(&term))?;
+        flag::register(*sig, Arc::clone(&term))
+            .with_context(|| format!("failed to register termination signal {sig}"))?;
     }
 
     while !term.load(Ordering::Relaxed) {
-        quaker.quake()?;
+        quaker.quake().context("failed to move the mouse pointer")?;
 
         let mut elapsed: f32 = 0.;
         while !term.load(Ordering::Relaxed) && elapsed < interval {
@@ -155,7 +157,7 @@ fn execute_quaker(
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let Cli {
         size,
         interval,
