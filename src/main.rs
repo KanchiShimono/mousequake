@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant, TryFromFloatSecsError};
 
 use anyhow::{self, Context};
+use clap::error::ErrorKind;
 use clap::{Args, Command, CommandFactory, Parser, ValueEnum};
 use clap_complete::Shell;
 use enigo::Coordinate::Rel;
@@ -16,10 +17,7 @@ use signal_hook::flag;
 use thiserror::Error;
 
 mod trajectory;
-use trajectory::{
-    CircleTrajectory, InfinityTrajectory, LinearTrajectory, SquareTrajectory, StarTrajectory,
-    Trajectory,
-};
+use trajectory::{Trajectory, TrajectoryExtent, TrajectorySpec, TrajectoryType};
 
 const MIN_MOVEMENT_INTERVAL: Duration = Duration::from_millis(20);
 const MAX_MOVEMENT_INTERVAL: Duration = Duration::from_secs(365 * 24 * 60 * 60);
@@ -98,14 +96,40 @@ enum MovementIntervalError {
     NotRepresentable(#[from] TryFromFloatSecsError),
 }
 
-#[derive(Debug, Clone, ValueEnum)]
-enum TrajectoryType {
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+enum TrajectoryArg {
+    #[default]
     Linear,
     Circle,
     Star,
     Square,
     #[value(alias = "figure8")]
     Infinity,
+}
+
+impl Display for TrajectoryArg {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Linear => "linear",
+            Self::Circle => "circle",
+            Self::Star => "star",
+            Self::Square => "square",
+            Self::Infinity => "infinity",
+        };
+        formatter.write_str(name)
+    }
+}
+
+impl From<TrajectoryArg> for TrajectoryType {
+    fn from(value: TrajectoryArg) -> Self {
+        match value {
+            TrajectoryArg::Linear => Self::Linear,
+            TrajectoryArg::Circle => Self::Circle,
+            TrajectoryArg::Star => Self::Star,
+            TrajectoryArg::Square => Self::Square,
+            TrajectoryArg::Infinity => Self::Infinity,
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -131,10 +155,11 @@ struct Cli {
     #[arg(
         short,
         long,
-        default_value_t = 1,
-        help = "Maximum width of the trajectory pattern (pixels)"
+        default_value_t = TrajectoryExtent::default(),
+        allow_hyphen_values = true,
+        help = "Maximum width of the trajectory pattern (pixels; positive integer; star and infinity require size >= 2)"
     )]
-    size: i32,
+    size: TrajectoryExtent,
 
     #[arg(
         short,
@@ -149,10 +174,10 @@ struct Cli {
         short,
         long,
         value_enum,
-        default_value_t = TrajectoryType::Linear,
+        default_value_t = TrajectoryArg::default(),
         help = "Trajectory pattern to use"
     )]
-    trajectory: TrajectoryType,
+    trajectory: TrajectoryArg,
 
     #[command(subcommand)]
     command: Option<Subcommand>,
@@ -231,19 +256,10 @@ impl Quaker {
     }
 
     fn quake(&mut self) -> Result<(), InputError> {
-        let point = self.trajectory.next();
-        self.enigo.move_mouse(point.x as i32, point.y as i32, Rel)?;
+        let displacement = self.trajectory.next();
+        let (x, y) = displacement.components();
+        self.enigo.move_mouse(x, y, Rel)?;
         Ok(())
-    }
-}
-
-fn create_trajectory(trajectory_type: TrajectoryType, size: f32) -> Box<dyn Trajectory> {
-    match trajectory_type {
-        TrajectoryType::Linear => Box::new(LinearTrajectory::new(size)),
-        TrajectoryType::Circle => Box::new(CircleTrajectory::new(size)),
-        TrajectoryType::Star => Box::new(StarTrajectory::new(size)),
-        TrajectoryType::Square => Box::new(SquareTrajectory::new(size)),
-        TrajectoryType::Infinity => Box::new(InfinityTrajectory::new(size)),
     }
 }
 
@@ -279,13 +295,12 @@ where
 }
 
 fn execute_quaker(
-    size: i32,
+    trajectory_spec: TrajectorySpec,
     interval: MovementInterval,
-    trajectory_type: TrajectoryType,
 ) -> anyhow::Result<()> {
+    let trajectory = trajectory_spec.into_trajectory();
     let enigo =
         Enigo::new(&Settings::default()).context("failed to initialize mouse input backend")?;
-    let trajectory = create_trajectory(trajectory_type, size as f32);
     let mut quaker = Quaker::new(enigo, trajectory);
     let term = Arc::new(AtomicBool::new(false));
     let clock = MonotonicClock;
@@ -328,7 +343,13 @@ fn main() -> anyhow::Result<()> {
         };
     }
 
-    execute_quaker(size, interval, trajectory)
+    let trajectory_spec =
+        TrajectorySpec::try_new(trajectory.into(), size).unwrap_or_else(|error| {
+            Cli::command()
+                .error(ErrorKind::ValueValidation, error)
+                .exit()
+        });
+    execute_quaker(trajectory_spec, interval)
 }
 
 #[cfg(test)]
@@ -373,23 +394,31 @@ mod tests {
     #[test]
     fn test_cli_default_values() {
         let cli = Cli::parse_from(["mousequake"]);
-        assert_eq!(cli.size, 1);
+        assert_eq!(cli.size, TrajectoryExtent::try_from(1).unwrap());
         assert_eq!(cli.interval.duration(), Duration::from_secs(10));
-        assert!(matches!(cli.trajectory, TrajectoryType::Linear));
+        assert!(matches!(cli.trajectory, TrajectoryArg::Linear));
         assert!(cli.command.is_none());
     }
 
     #[test]
     fn test_cli_custom_size() {
         let cli = Cli::parse_from(["mousequake", "-s", "5"]);
-        assert_eq!(cli.size, 5);
+        assert_eq!(cli.size, TrajectoryExtent::try_from(5).unwrap());
         assert_eq!(cli.interval.duration(), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_cli_rejects_non_positive_sizes() {
+        for size in ["0", "-1"] {
+            let result = Cli::try_parse_from(["mousequake", "--size", size]);
+            assert!(result.is_err(), "size {size:?} should be rejected");
+        }
     }
 
     #[test]
     fn test_cli_custom_interval() {
         let cli = Cli::parse_from(["mousequake", "-i", "30.5"]);
-        assert_eq!(cli.size, 1);
+        assert_eq!(cli.size, TrajectoryExtent::try_from(1).unwrap());
         assert_eq!(cli.interval.duration(), Duration::from_millis(30_500));
     }
 
@@ -529,13 +558,13 @@ mod tests {
     #[test]
     fn test_cli_trajectory_types() {
         let cli = Cli::parse_from(["mousequake", "-t", "circle"]);
-        assert!(matches!(cli.trajectory, TrajectoryType::Circle));
+        assert!(matches!(cli.trajectory, TrajectoryArg::Circle));
 
         let cli = Cli::parse_from(["mousequake", "-t", "star"]);
-        assert!(matches!(cli.trajectory, TrajectoryType::Star));
+        assert!(matches!(cli.trajectory, TrajectoryArg::Star));
 
         let cli = Cli::parse_from(["mousequake", "-t", "figure8"]);
-        assert!(matches!(cli.trajectory, TrajectoryType::Infinity));
+        assert!(matches!(cli.trajectory, TrajectoryArg::Infinity));
     }
 
     #[test]
