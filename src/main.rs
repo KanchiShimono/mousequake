@@ -21,6 +21,7 @@ use trajectory::{
     Trajectory,
 };
 
+const MIN_MOVEMENT_INTERVAL: Duration = Duration::from_millis(20);
 const MAX_MOVEMENT_INTERVAL: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 const TERMINATION_CHECK_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -50,9 +51,9 @@ impl TryFrom<f64> for MovementInterval {
         }
 
         let duration = Duration::try_from_secs_f64(seconds)?;
-        if duration.is_zero() {
-            return Err(MovementIntervalError::BelowResolution {
-                minimum_nanoseconds: 1,
+        if duration < MIN_MOVEMENT_INTERVAL {
+            return Err(MovementIntervalError::BelowMinimum {
+                minimum_milliseconds: MIN_MOVEMENT_INTERVAL.as_millis(),
             });
         }
 
@@ -89,8 +90,8 @@ enum MovementIntervalError {
     NotFinite,
     #[error("interval must be greater than 0 seconds")]
     NotPositive,
-    #[error("interval must resolve to at least {minimum_nanoseconds} nanosecond")]
-    BelowResolution { minimum_nanoseconds: u64 },
+    #[error("interval must be at least {minimum_milliseconds} milliseconds")]
+    BelowMinimum { minimum_milliseconds: u128 },
     #[error("interval must not exceed {maximum_seconds} seconds")]
     AboveMaximum { maximum_seconds: u64 },
     #[error("interval cannot be represented as a duration")]
@@ -140,7 +141,7 @@ struct Cli {
         long,
         default_value_t = MovementInterval::default(),
         allow_hyphen_values = true,
-        help = "Time from one successful mouse movement to the next (seconds; > 0, <= 31536000)"
+        help = "Time from one successful mouse movement to the next (seconds; >= 0.02, <= 31536000)"
     )]
     interval: MovementInterval,
 
@@ -401,8 +402,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_rejects_intervals_outside_duration_range() {
-        for interval in ["0.0000000001", "31536000.00000001"] {
+    fn test_cli_rejects_intervals_outside_supported_range() {
+        for interval in ["0.0000000001", "0.001", "0.019999999", "31536000.00000001"] {
             let result = Cli::try_parse_from(["mousequake", "--interval", interval]);
             assert!(result.is_err(), "interval {interval:?} should be rejected");
         }
@@ -423,9 +424,9 @@ mod tests {
             Err(MovementIntervalError::NotPositive)
         ));
         assert!(matches!(
-            MovementInterval::try_from(0.0000000001),
-            Err(MovementIntervalError::BelowResolution {
-                minimum_nanoseconds: 1
+            MovementInterval::try_from(0.019),
+            Err(MovementIntervalError::BelowMinimum {
+                minimum_milliseconds: 20
             })
         ));
         assert!(matches!(
@@ -438,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_cli_accepts_valid_intervals() {
-        for interval in ["0.000000001", "0.1", "0.6", "10.1", "8388609", "31536000"] {
+        for interval in ["0.02", "0.1", "0.6", "10.1", "8388609", "31536000"] {
             let result = Cli::try_parse_from(["mousequake", "--interval", interval]);
             assert!(result.is_ok(), "interval {interval:?} should be accepted");
         }
