@@ -28,7 +28,7 @@ mousequake [OPTIONS] [COMMAND]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--size` | `-s` | 1 | Maximum width of the trajectory pattern (pixels) |
-| `--interval` | `-i` | 10 | Time between movements (seconds) |
+| `--interval` | `-i` | 10 | Time from one successful movement to the next (positive number of seconds) |
 | `--trajectory` | `-t` | linear | Trajectory pattern (linear, circle, star, square, infinity) |
 | `--help` | `-h` | | Show help information |
 | `--version` | `-V` | | Show version |
@@ -51,6 +51,10 @@ mousequake -t star -s 20 -i 5
 # Infinity/figure-8 pattern
 mousequake -t infinity -s 15
 ```
+
+The first movement happens immediately. Each following movement is scheduled relative to the
+completion of the previous successful movement. While waiting, mousequake checks for a termination
+signal periodically.
 
 ## Shell Completion
 

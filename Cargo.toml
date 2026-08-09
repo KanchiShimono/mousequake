@@ -8,7 +8,9 @@ description = "Simple tool for automatically shaking the mouse pointer"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 enigo = "0.6.1"
 signal-hook = "0.4.4"
+thiserror = "2"

@@ -1,21 +1,101 @@
-use std::error::Error;
+use std::fmt::{self, Display, Formatter};
+use std::num::ParseFloatError;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant, TryFromFloatSecsError};
 
+use anyhow::{self, Context};
 use clap::{Args, Command, CommandFactory, Parser, ValueEnum};
 use clap_complete::Shell;
 use enigo::Coordinate::Rel;
 use enigo::{Enigo, InputError, Mouse, Settings};
 use signal_hook::consts::TERM_SIGNALS;
 use signal_hook::flag;
+use thiserror::Error;
 
 mod trajectory;
 use trajectory::{
     CircleTrajectory, InfinityTrajectory, LinearTrajectory, SquareTrajectory, StarTrajectory,
     Trajectory,
 };
+
+const MAX_MOVEMENT_INTERVAL: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+const TERMINATION_CHECK_INTERVAL: Duration = Duration::from_millis(500);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MovementInterval(Duration);
+
+impl MovementInterval {
+    fn duration(self) -> Duration {
+        self.0
+    }
+}
+
+impl TryFrom<f64> for MovementInterval {
+    type Error = MovementIntervalError;
+
+    fn try_from(seconds: f64) -> Result<Self, Self::Error> {
+        if !seconds.is_finite() {
+            return Err(MovementIntervalError::NotFinite);
+        }
+        if seconds <= 0.0 {
+            return Err(MovementIntervalError::NotPositive);
+        }
+        if seconds > MAX_MOVEMENT_INTERVAL.as_secs_f64() {
+            return Err(MovementIntervalError::AboveMaximum {
+                maximum_seconds: MAX_MOVEMENT_INTERVAL.as_secs(),
+            });
+        }
+
+        let duration = Duration::try_from_secs_f64(seconds)?;
+        if duration.is_zero() {
+            return Err(MovementIntervalError::BelowResolution {
+                minimum_nanoseconds: 1,
+            });
+        }
+
+        Ok(Self(duration))
+    }
+}
+
+impl Default for MovementInterval {
+    fn default() -> Self {
+        Self(Duration::from_secs(10))
+    }
+}
+
+impl Display for MovementInterval {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.duration().as_secs_f64())
+    }
+}
+
+impl FromStr for MovementInterval {
+    type Err = MovementIntervalError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let seconds = value.parse::<f64>()?;
+        Self::try_from(seconds)
+    }
+}
+
+#[derive(Debug, Error)]
+enum MovementIntervalError {
+    #[error("interval must be a number of seconds")]
+    Parse(#[from] ParseFloatError),
+    #[error("interval must be finite")]
+    NotFinite,
+    #[error("interval must be greater than 0 seconds")]
+    NotPositive,
+    #[error("interval must resolve to at least {minimum_nanoseconds} nanosecond")]
+    BelowResolution { minimum_nanoseconds: u64 },
+    #[error("interval must not exceed {maximum_seconds} seconds")]
+    AboveMaximum { maximum_seconds: u64 },
+    #[error("interval cannot be represented as a duration")]
+    NotRepresentable(#[from] TryFromFloatSecsError),
+}
 
 #[derive(Debug, Clone, ValueEnum)]
 enum TrajectoryType {
@@ -58,10 +138,11 @@ struct Cli {
     #[arg(
         short,
         long,
-        default_value_t = 10.0,
-        help = "Time between mouse movements (seconds)"
+        default_value_t = MovementInterval::default(),
+        allow_hyphen_values = true,
+        help = "Time from one successful mouse movement to the next (seconds; > 0, <= 31536000)"
     )]
-    interval: f32,
+    interval: MovementInterval,
 
     #[arg(
         short,
@@ -89,7 +170,7 @@ struct CompletionCommand {
 }
 
 impl CompletionCommand {
-    fn execute(&self, cmd: &mut Command) -> Result<(), Box<dyn Error>> {
+    fn execute(&self, cmd: &mut Command) -> anyhow::Result<()> {
         clap_complete::generate(
             self.shell,
             cmd,
@@ -103,6 +184,44 @@ impl CompletionCommand {
 struct Quaker {
     enigo: Enigo,
     trajectory: Box<dyn Trajectory>,
+}
+
+trait Clock {
+    fn now(&self) -> Instant;
+}
+
+trait Sleeper {
+    fn sleep(&self, duration: Duration);
+}
+
+struct MonotonicClock;
+
+impl Clock for MonotonicClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+struct ThreadSleeper;
+
+impl Sleeper for ThreadSleeper {
+    fn sleep(&self, duration: Duration) {
+        thread::sleep(duration);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WaitOutcome {
+    DeadlineReached,
+    Terminated,
+}
+
+#[derive(Debug, Error)]
+enum WaitError {
+    #[error(
+        "cannot schedule the next movement: adding interval {interval:?} exceeds the monotonic clock range"
+    )]
+    DeadlineOverflow { interval: Duration },
 }
 
 impl Quaker {
@@ -127,35 +246,71 @@ fn create_trajectory(trajectory_type: TrajectoryType, size: f32) -> Box<dyn Traj
     }
 }
 
+fn wait_for_next_movement<C, S, F>(
+    successful_movement_at: Instant,
+    interval: MovementInterval,
+    clock: &C,
+    sleeper: &S,
+    mut should_terminate: F,
+) -> Result<WaitOutcome, WaitError>
+where
+    C: Clock,
+    S: Sleeper,
+    F: FnMut() -> bool,
+{
+    let duration = interval.duration();
+    let deadline = successful_movement_at
+        .checked_add(duration)
+        .ok_or(WaitError::DeadlineOverflow { interval: duration })?;
+
+    loop {
+        if should_terminate() {
+            return Ok(WaitOutcome::Terminated);
+        }
+
+        let remaining = deadline.saturating_duration_since(clock.now());
+        if remaining.is_zero() {
+            return Ok(WaitOutcome::DeadlineReached);
+        }
+
+        sleeper.sleep(remaining.min(TERMINATION_CHECK_INTERVAL));
+    }
+}
+
 fn execute_quaker(
     size: i32,
-    interval: f32,
+    interval: MovementInterval,
     trajectory_type: TrajectoryType,
-) -> Result<(), Box<dyn Error>> {
-    let enigo = Enigo::new(&Settings::default())?;
+) -> anyhow::Result<()> {
+    let enigo =
+        Enigo::new(&Settings::default()).context("failed to initialize mouse input backend")?;
     let trajectory = create_trajectory(trajectory_type, size as f32);
     let mut quaker = Quaker::new(enigo, trajectory);
     let term = Arc::new(AtomicBool::new(false));
-    let sig_check_interval: f32 = 0.5;
+    let clock = MonotonicClock;
+    let sleeper = ThreadSleeper;
 
     for sig in TERM_SIGNALS {
-        flag::register(*sig, Arc::clone(&term))?;
+        flag::register(*sig, Arc::clone(&term))
+            .with_context(|| format!("failed to register termination signal {sig}"))?;
     }
 
     while !term.load(Ordering::Relaxed) {
-        quaker.quake()?;
+        quaker.quake().context("failed to move the mouse pointer")?;
+        let successful_movement_at = clock.now();
 
-        let mut elapsed: f32 = 0.;
-        while !term.load(Ordering::Relaxed) && elapsed < interval {
-            thread::sleep(Duration::from_secs_f32(sig_check_interval));
-            elapsed += sig_check_interval;
+        if wait_for_next_movement(successful_movement_at, interval, &clock, &sleeper, || {
+            term.load(Ordering::Relaxed)
+        })? == WaitOutcome::Terminated
+        {
+            break;
         }
     }
 
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let Cli {
         size,
         interval,
@@ -177,15 +332,48 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
+
     use clap::Parser;
 
     use super::*;
+
+    struct FakeTime {
+        now: Cell<Instant>,
+        sleeps: RefCell<Vec<Duration>>,
+    }
+
+    impl FakeTime {
+        fn new() -> Self {
+            Self {
+                now: Cell::new(Instant::now()),
+                sleeps: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn advance(&self, duration: Duration) {
+            self.now.set(self.now.get().checked_add(duration).unwrap());
+        }
+    }
+
+    impl Clock for FakeTime {
+        fn now(&self) -> Instant {
+            self.now.get()
+        }
+    }
+
+    impl Sleeper for FakeTime {
+        fn sleep(&self, duration: Duration) {
+            self.sleeps.borrow_mut().push(duration);
+            self.advance(duration);
+        }
+    }
 
     #[test]
     fn test_cli_default_values() {
         let cli = Cli::parse_from(["mousequake"]);
         assert_eq!(cli.size, 1);
-        assert_eq!(cli.interval, 10.0);
+        assert_eq!(cli.interval.duration(), Duration::from_secs(10));
         assert!(matches!(cli.trajectory, TrajectoryType::Linear));
         assert!(cli.command.is_none());
     }
@@ -194,14 +382,147 @@ mod tests {
     fn test_cli_custom_size() {
         let cli = Cli::parse_from(["mousequake", "-s", "5"]);
         assert_eq!(cli.size, 5);
-        assert_eq!(cli.interval, 10.0);
+        assert_eq!(cli.interval.duration(), Duration::from_secs(10));
     }
 
     #[test]
     fn test_cli_custom_interval() {
         let cli = Cli::parse_from(["mousequake", "-i", "30.5"]);
         assert_eq!(cli.size, 1);
-        assert_eq!(cli.interval, 30.5);
+        assert_eq!(cli.interval.duration(), Duration::from_millis(30_500));
+    }
+
+    #[test]
+    fn test_cli_rejects_invalid_intervals() {
+        for interval in ["0", "-0", "-1", "NaN", "inf", "+inf", "-inf"] {
+            let result = Cli::try_parse_from(["mousequake", "--interval", interval]);
+            assert!(result.is_err(), "interval {interval:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn test_cli_rejects_intervals_outside_duration_range() {
+        for interval in ["0.0000000001", "31536000.00000001"] {
+            let result = Cli::try_parse_from(["mousequake", "--interval", interval]);
+            assert!(result.is_err(), "interval {interval:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn test_movement_interval_preserves_error_categories() {
+        assert!(matches!(
+            "not-a-number".parse::<MovementInterval>(),
+            Err(MovementIntervalError::Parse(_))
+        ));
+        assert!(matches!(
+            MovementInterval::try_from(f64::NAN),
+            Err(MovementIntervalError::NotFinite)
+        ));
+        assert!(matches!(
+            MovementInterval::try_from(-0.0),
+            Err(MovementIntervalError::NotPositive)
+        ));
+        assert!(matches!(
+            MovementInterval::try_from(0.0000000001),
+            Err(MovementIntervalError::BelowResolution {
+                minimum_nanoseconds: 1
+            })
+        ));
+        assert!(matches!(
+            MovementInterval::try_from(31_536_001.0),
+            Err(MovementIntervalError::AboveMaximum {
+                maximum_seconds: 31_536_000
+            })
+        ));
+    }
+
+    #[test]
+    fn test_cli_accepts_valid_intervals() {
+        for interval in ["0.000000001", "0.1", "0.6", "10.1", "8388609", "31536000"] {
+            let result = Cli::try_parse_from(["mousequake", "--interval", interval]);
+            assert!(result.is_ok(), "interval {interval:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn test_wait_uses_exact_remaining_duration_without_real_sleeping() {
+        for (interval, expected_duration, expected_sleep_count) in [
+            ("0.1", Duration::from_millis(100), 1),
+            ("0.6", Duration::from_millis(600), 2),
+            ("10.1", Duration::from_millis(10_100), 21),
+        ] {
+            let fake_time = FakeTime::new();
+            let successful_movement_at = fake_time.now();
+            let movement_interval = interval.parse::<MovementInterval>().unwrap();
+
+            let outcome = wait_for_next_movement(
+                successful_movement_at,
+                movement_interval,
+                &fake_time,
+                &fake_time,
+                || false,
+            )
+            .unwrap();
+
+            let sleeps = fake_time.sleeps.borrow();
+            let total_sleep = sleeps.iter().copied().sum::<Duration>();
+            let (last_sleep, full_chunks) = sleeps.split_last().unwrap();
+            assert_eq!(outcome, WaitOutcome::DeadlineReached);
+            assert_eq!(movement_interval.duration(), expected_duration);
+            assert_eq!(total_sleep, expected_duration);
+            assert_eq!(sleeps.len(), expected_sleep_count);
+            assert_eq!(*last_sleep, Duration::from_millis(100));
+            assert!(
+                full_chunks
+                    .iter()
+                    .all(|duration| *duration == TERMINATION_CHECK_INTERVAL)
+            );
+        }
+    }
+
+    #[test]
+    fn test_wait_progresses_near_large_interval_deadline() {
+        let fake_time = FakeTime::new();
+        let successful_movement_at = fake_time.now();
+        let interval = "8388609".parse::<MovementInterval>().unwrap();
+        fake_time.advance(Duration::from_secs(8_388_608));
+
+        let outcome = wait_for_next_movement(
+            successful_movement_at,
+            interval,
+            &fake_time,
+            &fake_time,
+            || false,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, WaitOutcome::DeadlineReached);
+        assert_eq!(
+            fake_time.sleeps.borrow().as_slice(),
+            [Duration::from_millis(500), Duration::from_millis(500)]
+        );
+    }
+
+    #[test]
+    fn test_wait_stops_when_termination_is_requested() {
+        let fake_time = FakeTime::new();
+        let successful_movement_at = fake_time.now();
+        let interval = "10.1".parse::<MovementInterval>().unwrap();
+
+        let outcome = wait_for_next_movement(
+            successful_movement_at,
+            interval,
+            &fake_time,
+            &fake_time,
+            || !fake_time.sleeps.borrow().is_empty(),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, WaitOutcome::Terminated);
+        assert_eq!(
+            fake_time.sleeps.borrow().as_slice(),
+            [Duration::from_millis(500)]
+        );
     }
 
     #[test]
