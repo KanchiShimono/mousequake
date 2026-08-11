@@ -1,4 +1,5 @@
 use std::fmt::{self, Display, Formatter};
+use std::io::{self, Write};
 use std::num::ParseFloatError;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -12,8 +13,12 @@ use clap::{Args, Command, CommandFactory, Parser, ValueEnum};
 use clap_complete::Shell;
 use enigo::Coordinate::Rel;
 use enigo::{Enigo, InputError, Mouse, Settings};
+#[cfg(unix)]
+use signal_hook::consts::SIGPIPE;
 use signal_hook::consts::TERM_SIGNALS;
 use signal_hook::flag;
+#[cfg(unix)]
+use signal_hook::low_level;
 use thiserror::Error;
 
 mod trajectory;
@@ -149,7 +154,8 @@ Press Ctrl+C to stop."#,
     mousequake -t circle -s 10      # Move in a circle with 10px diameter
     mousequake -t star -s 20 -i 5   # Draw a star pattern, 20px size, every 5 seconds
     mousequake -t infinity -s 15    # Move in figure-8/infinity pattern, 15px size
-    mousequake completion bash      # Generate bash completion script"#
+    mousequake completion bash      # Generate bash completion script"#,
+    args_conflicts_with_subcommands = true
 )]
 struct Cli {
     #[arg(
@@ -196,15 +202,37 @@ struct CompletionCommand {
 }
 
 impl CompletionCommand {
-    fn execute(&self, cmd: &mut Command) -> anyhow::Result<()> {
+    fn generate<W: Write>(&self, command: &mut Command, writer: &mut W) -> io::Result<()> {
+        let mut buffer = Vec::new();
         clap_complete::generate(
             self.shell,
-            cmd,
-            cmd.get_name().to_string(),
-            &mut std::io::stdout(),
+            command,
+            command.get_name().to_string(),
+            &mut buffer,
         );
-        Ok(())
+
+        writer.write_all(&buffer)
     }
+}
+
+fn execute_completion<W: Write>(
+    completion: &CompletionCommand,
+    command: &mut Command,
+    writer: &mut W,
+) -> anyhow::Result<()> {
+    match completion.generate(command, writer) {
+        Ok(()) => Ok(()),
+        #[cfg(unix)]
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => terminate_with_sigpipe(),
+        Err(error) => Err(error).context("failed to write shell completion script"),
+    }
+}
+
+#[cfg(unix)]
+fn terminate_with_sigpipe() -> anyhow::Result<()> {
+    low_level::emulate_default_handler(SIGPIPE)
+        .context("failed to emulate the default SIGPIPE action")?;
+    unreachable!("the default SIGPIPE action should terminate the process")
 }
 
 struct Quaker {
@@ -338,7 +366,7 @@ fn main() -> anyhow::Result<()> {
         return match command {
             Subcommand::Completion(cmd) => {
                 let mut command = Cli::command();
-                cmd.execute(&mut command)
+                execute_completion(&cmd, &mut command, &mut io::stdout())
             }
         };
     }
@@ -355,6 +383,13 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
+    #[cfg(unix)]
+    use std::env;
+    use std::io::{self, Write};
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+    #[cfg(unix)]
+    use std::process;
 
     use clap::Parser;
 
@@ -363,6 +398,18 @@ mod tests {
     struct FakeTime {
         now: Cell<Instant>,
         sleeps: RefCell<Vec<Duration>>,
+    }
+
+    struct FailingWriter(io::ErrorKind);
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from(self.0))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
 
     impl FakeTime {
@@ -571,5 +618,84 @@ mod tests {
     fn test_cli_completion_subcommand() {
         let cli = Cli::parse_from(["mousequake", "completion", "bash"]);
         assert!(matches!(cli.command, Some(Subcommand::Completion(_))));
+    }
+
+    #[test]
+    fn test_completion_returns_regular_writer_error() {
+        let error_kind = if cfg!(unix) {
+            io::ErrorKind::StorageFull
+        } else {
+            io::ErrorKind::BrokenPipe
+        };
+        let completion = CompletionCommand { shell: Shell::Bash };
+        let mut command = Cli::command();
+        let mut writer = FailingWriter(error_kind);
+
+        let error = execute_completion(&completion, &mut command, &mut writer).unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<io::Error>().map(io::Error::kind),
+            Some(error_kind)
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("failed to write shell completion script")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_completion_broken_pipe_terminates_with_sigpipe() {
+        let output = process::Command::new(env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::test_completion_broken_pipe_subprocess",
+                "--ignored",
+            ])
+            .env("MOUSEQUAKE_TEST_BROKEN_PIPE", "1")
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.signal(), Some(SIGPIPE));
+        assert!(
+            output.stderr.is_empty(),
+            "stderr should be empty: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "subprocess helper"]
+    fn test_completion_broken_pipe_subprocess() {
+        if env::var("MOUSEQUAKE_TEST_BROKEN_PIPE").as_deref() != Ok("1") {
+            return;
+        }
+
+        let completion = CompletionCommand { shell: Shell::Bash };
+        let mut command = Cli::command();
+        let mut writer = FailingWriter(io::ErrorKind::BrokenPipe);
+
+        execute_completion(&completion, &mut command, &mut writer).unwrap();
+    }
+
+    #[test]
+    fn test_cli_rejects_execution_options_before_and_after_completion() {
+        for (option, value) in [("-s", "5"), ("-i", "5"), ("-t", "circle")] {
+            for arguments in [
+                ["mousequake", option, value, "completion", "bash"],
+                ["mousequake", "completion", "bash", option, value],
+            ] {
+                let error = Cli::try_parse_from(arguments).unwrap_err();
+                let stderr = error.to_string();
+
+                assert_eq!(error.exit_code(), 2, "arguments: {arguments:?}");
+                assert!(
+                    stderr.contains(option),
+                    "stderr should contain {option:?} for arguments {arguments:?}: {stderr}"
+                );
+            }
+        }
     }
 }
