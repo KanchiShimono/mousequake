@@ -14,3 +14,46 @@ clap_complete = "4"
 enigo = "0.6.1"
 signal-hook = "0.4.4"
 thiserror = "2"
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+# Idiomatic Paths
+absolute_paths = "warn"
+enum_glob_use = "warn"
+wildcard_imports = "warn"
+
+# Errors as Values / hygiene
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+exit = "warn"
+expect_used = "warn"
+let_underscore_must_use = "warn"
+map_err_ignore = "warn"
+panic_in_result_fn = "warn"
+todo = "warn"
+unimplemented = "warn"
+unused_result_ok = "warn"
+unwrap_used = "warn"
+
+# Make Illegal States Unrepresentable
+fallible_impl_from = "warn"
+fn_params_excessive_bools = "warn"
+struct_excessive_bools = "warn"
+
+# Functional Core, Imperative Shell
+print_stderr = "warn"
+print_stdout = "warn"
+
+# Low-churn nursery lints
+debug_assert_with_mut_call = "warn"
+needless_collect = "warn"
+redundant_clone = "warn"
+
+# Low-churn pedantic lints
+redundant_closure_for_method_calls = "warn"
+uninlined_format_args = "warn"
