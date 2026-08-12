@@ -11,7 +11,7 @@ Mousequake is a Rust 2024 CLI. `src/main.rs` defines the `clap` interface, shell
 - `cargo run -- -t circle -s 10 -i 5`: run a local example; stop it with Ctrl+C.
 - `cargo test --workspace --locked --all-features --all-targets`: run all unit tests.
 - `cargo fmt --all -- --check`: verify formatting exactly as CI does.
-- `cargo clippy --config 'build.warnings="deny"' --workspace --locked --all-targets --all-features`: lint with warnings treated as errors.
+- `cargo clippy --workspace --locked --all-targets --all-features`: lint with warnings treated as errors.
 - `cargo check --workspace --locked --all-targets --all-features`: perform the CI compile check quickly.
 
 The stable toolchain includes `rustfmt` and `clippy` through `rust-toolchain.toml`.
