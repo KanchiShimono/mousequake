@@ -385,11 +385,11 @@ mod tests {
     use std::cell::{Cell, RefCell};
     #[cfg(unix)]
     use std::env;
-    use std::io::{self, Write};
+    use std::io::{self, Error, ErrorKind, Write};
     #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
     #[cfg(unix)]
-    use std::process;
+    use std::process::Command;
 
     use clap::Parser;
 
@@ -400,11 +400,11 @@ mod tests {
         sleeps: RefCell<Vec<Duration>>,
     }
 
-    struct FailingWriter(io::ErrorKind);
+    struct FailingWriter(ErrorKind);
 
     impl Write for FailingWriter {
         fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
-            Err(io::Error::from(self.0))
+            Err(Error::from(self.0))
         }
 
         fn flush(&mut self) -> io::Result<()> {
@@ -623,18 +623,18 @@ mod tests {
     #[test]
     fn test_completion_returns_regular_writer_error() {
         let error_kind = if cfg!(unix) {
-            io::ErrorKind::StorageFull
+            ErrorKind::StorageFull
         } else {
-            io::ErrorKind::BrokenPipe
+            ErrorKind::BrokenPipe
         };
         let completion = CompletionCommand { shell: Shell::Bash };
         let mut command = Cli::command();
         let mut writer = FailingWriter(error_kind);
 
-        let error = execute_completion(&completion, &mut command, &mut writer).unwrap_err();
+        let error = super::execute_completion(&completion, &mut command, &mut writer).unwrap_err();
 
         assert_eq!(
-            error.downcast_ref::<io::Error>().map(io::Error::kind),
+            error.downcast_ref::<Error>().map(Error::kind),
             Some(error_kind)
         );
         assert!(
@@ -647,7 +647,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_completion_broken_pipe_terminates_with_sigpipe() {
-        let output = process::Command::new(env::current_exe().unwrap())
+        let output = Command::new(env::current_exe().unwrap())
             .args([
                 "--exact",
                 "tests::test_completion_broken_pipe_subprocess",
@@ -675,9 +675,9 @@ mod tests {
 
         let completion = CompletionCommand { shell: Shell::Bash };
         let mut command = Cli::command();
-        let mut writer = FailingWriter(io::ErrorKind::BrokenPipe);
+        let mut writer = FailingWriter(ErrorKind::BrokenPipe);
 
-        execute_completion(&completion, &mut command, &mut writer).unwrap();
+        super::execute_completion(&completion, &mut command, &mut writer).unwrap();
     }
 
     #[test]
