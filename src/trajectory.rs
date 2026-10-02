@@ -1,5 +1,7 @@
 use std::f64::consts::PI;
-use std::fmt::{self, Display, Formatter};
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::{self};
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -322,10 +324,14 @@ fn cycle_displacements(points: Vec<Point>) -> Option<Vec<Displacement>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Displacement, PI, Trajectory, TrajectoryExtent, TrajectoryExtentError, TrajectorySpec,
-        TrajectorySpecError, TrajectoryType,
-    };
+    use super::Displacement;
+    use super::PI;
+    use super::Trajectory;
+    use super::TrajectoryExtent;
+    use super::TrajectoryExtentError;
+    use super::TrajectorySpec;
+    use super::TrajectorySpecError;
+    use super::TrajectoryType;
 
     struct BoundingBox {
         width: i32,

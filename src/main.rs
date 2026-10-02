@@ -1,18 +1,32 @@
-use std::fmt::{self, Display, Formatter};
-use std::io::{self, Write};
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::{self};
+use std::io::Write;
+use std::io::{self};
 use std::num::ParseFloatError;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::thread;
-use std::time::{Duration, Instant, TryFromFloatSecsError};
+use std::time::Duration;
+use std::time::Instant;
+use std::time::TryFromFloatSecsError;
 
-use anyhow::{self, Context};
+use anyhow::Context;
+use anyhow::{self};
+use clap::Args;
+use clap::Command;
+use clap::CommandFactory;
+use clap::Parser;
+use clap::ValueEnum;
 use clap::error::ErrorKind;
-use clap::{Args, Command, CommandFactory, Parser, ValueEnum};
 use clap_complete::Shell;
 use enigo::Coordinate::Rel;
-use enigo::{Enigo, InputError, Mouse, Settings};
+use enigo::Enigo;
+use enigo::InputError;
+use enigo::Mouse;
+use enigo::Settings;
 #[cfg(unix)]
 use signal_hook::consts::SIGPIPE;
 use signal_hook::consts::TERM_SIGNALS;
@@ -22,7 +36,10 @@ use signal_hook::low_level;
 use thiserror::Error;
 
 mod trajectory;
-use trajectory::{Trajectory, TrajectoryExtent, TrajectorySpec, TrajectoryType};
+use trajectory::Trajectory;
+use trajectory::TrajectoryExtent;
+use trajectory::TrajectorySpec;
+use trajectory::TrajectoryType;
 
 const MIN_MOVEMENT_INTERVAL: Duration = Duration::from_millis(20);
 const MAX_MOVEMENT_INTERVAL: Duration = Duration::from_secs(365 * 24 * 60 * 60);
@@ -382,10 +399,14 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::{Cell, RefCell};
+    use std::cell::Cell;
+    use std::cell::RefCell;
     #[cfg(unix)]
     use std::env;
-    use std::io::{self, Error, ErrorKind, Write};
+    use std::io::Error;
+    use std::io::ErrorKind;
+    use std::io::Write;
+    use std::io::{self};
     #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
     #[cfg(unix)]
