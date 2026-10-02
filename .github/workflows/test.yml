@@ -19,8 +19,11 @@ jobs:
       - name: Setup | Checkout
         uses: actions/checkout@v7
 
+      - name: Setup | Rustfmt
+        run: rustup toolchain install nightly --profile minimal --component rustfmt
+
       - name: Build | Format
-        run: cargo fmt --all -- --check
+        run: cargo +nightly fmt --all -- --check
 
   clippy:
     name: Clippy
